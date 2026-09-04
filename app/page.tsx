@@ -4,10 +4,12 @@ import { useState, useEffect } from 'react';
 import type { SensorReading } from '@/lib/glof-simulation';
 import type { DecisionResult } from '@/lib/glof-decision';
 import type { AlertResult } from '@/lib/glof-alert';
+import type { EvacuationPriorityItem } from '@/lib/glof-routing';
 
 export default function Home() {
   const [data, setData] = useState<SensorReading[]>([]);
   const [decision, setDecision] = useState<DecisionResult | null>(null);
+  const [routing, setRouting] = useState<EvacuationPriorityItem[]>([]);
   const [alertResult, setAlertResult] = useState<AlertResult | null>(null);
   const [alertLoading, setAlertLoading] = useState<boolean>(false);
   const [alertError, setAlertError] = useState<string | null>(null);
@@ -22,10 +24,12 @@ export default function Home() {
     Promise.all([
       fetch(`/api/sensor-data${scenario === 'normal' ? '?spikeMinute=0' : ''}`).then((r) => r.json()),
       fetch(`/api/decision${scenarioQuery}`).then((r) => r.json()),
+      fetch('/api/routing').then((r) => r.json()),
     ])
-      .then(([readings, dec]: [SensorReading[], DecisionResult]) => {
+      .then(([readings, dec, routeItems]: [SensorReading[], DecisionResult, EvacuationPriorityItem[]]) => {
         setData(readings);
         setDecision(dec);
+        setRouting(routeItems);
         setAlertResult(null); // reset alert for new scenario
         setLoading(false);
       })
@@ -83,10 +87,11 @@ export default function Home() {
     <main style={{ maxWidth: '960px', margin: '0 auto', padding: '40px 20px' }}>
       <header style={{ marginBottom: '32px', borderBottom: '1px solid #1e293b', paddingBottom: '24px' }}>
         <h1 style={{ fontSize: '2rem', margin: '0 0 8px 0', color: '#38bdf8' }}>
-          GLOF Early Warning & Alert System
+          GLOF Early Warning & Evacuation System
         </h1>
         <p style={{ color: '#94a3b8', margin: 0, fontSize: '1.05rem', lineHeight: '1.6' }}>
-          Himalayan Glacial Lake Outburst Flood (GLOF) monitoring, rule-based decision logic, and Featherless AI SMS broadcast generation.
+          Himalayan Glacial Lake Outburst Flood (GLOF) monitoring, rule-based decision logic,
+          Featherless AI SMS alerts, and valley evacuation routing priority rankings.
         </p>
       </header>
 
@@ -248,12 +253,164 @@ export default function Home() {
         )}
       </section>
 
+      {/* Evacuation Routing Section */}
+      <section style={{
+        backgroundColor: '#0f172a',
+        border: '1px solid #334155',
+        borderRadius: '12px',
+        padding: '24px',
+        marginBottom: '32px'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+          <div>
+            <h2 style={{ fontSize: '1.25rem', color: '#e2e8f0', margin: 0 }}>
+              Valley Evacuation Priority Routing
+            </h2>
+            <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: '4px 0 0 0' }}>
+              Downstream river settlements ranked by flood wave arrival time and population vulnerability.
+            </p>
+          </div>
+          <a
+            href="/api/routing"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              color: '#38bdf8',
+              textDecoration: 'none',
+              border: '1px solid #0284c7',
+              padding: '6px 14px',
+              borderRadius: '6px',
+              fontSize: '0.85rem'
+            }}
+          >
+            Open /api/routing JSON &rarr;
+          </a>
+        </div>
+
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.95rem' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid #334155', backgroundColor: '#1e293b' }}>
+                <th style={{ padding: '12px 16px', color: '#94a3b8' }}>Priority Rank</th>
+                <th style={{ padding: '12px 16px', color: '#94a3b8' }}>Village Name</th>
+                <th style={{ padding: '12px 16px', color: '#94a3b8' }}>Estimated Wave Arrival</th>
+                <th style={{ padding: '12px 16px', color: '#94a3b8' }}>Population</th>
+                <th style={{ padding: '12px 16px', color: '#94a3b8' }}>Priority Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              {routing.map((item) => {
+                const isTopPriority = item.priority_rank === 1;
+                return (
+                  <tr
+                    key={item.village_name}
+                    style={{
+                      borderBottom: '1px solid #1e293b',
+                      backgroundColor: isTopPriority ? 'rgba(239, 68, 68, 0.1)' : 'transparent'
+                    }}
+                  >
+                    <td style={{ padding: '12px 16px' }}>
+                      <span style={{
+                        backgroundColor: isTopPriority ? '#ef4444' : item.priority_rank === 2 ? '#ea580c' : '#334155',
+                        color: '#ffffff',
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        fontWeight: 'bold',
+                        fontSize: '0.85rem'
+                      }}>
+                        #{item.priority_rank}
+                      </span>
+                    </td>
+                    <td style={{ padding: '12px 16px', fontWeight: isTopPriority ? 'bold' : 'normal', color: '#f8fafc' }}>
+                      {item.village_name}
+                      {isTopPriority && <span style={{ color: '#f87171', fontSize: '0.75rem', marginLeft: '8px' }}>[Immediate Action]</span>}
+                    </td>
+                    <td style={{ padding: '12px 16px', color: item.estimated_arrival_minutes <= 20 ? '#f43f5e' : item.estimated_arrival_minutes <= 60 ? '#fb923c' : '#38bdf8' }}>
+                      <strong>{item.estimated_arrival_minutes} mins</strong>
+                      <span style={{ color: '#64748b', fontSize: '0.8rem', marginLeft: '6px' }}>post-breach</span>
+                    </td>
+                    <td style={{ padding: '12px 16px', color: '#e2e8f0' }}>
+                      {item.population.toLocaleString()} residents
+                    </td>
+                    <td style={{ padding: '12px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{
+                          flex: 1,
+                          height: '8px',
+                          backgroundColor: '#1e293b',
+                          borderRadius: '4px',
+                          overflow: 'hidden',
+                          maxWidth: '100px'
+                        }}>
+                          <div style={{
+                            width: `${Math.min(100, item.priority_score)}%`,
+                            height: '100%',
+                            backgroundColor: isTopPriority ? '#ef4444' : item.priority_score > 50 ? '#ea580c' : '#0284c7'
+                          }} />
+                        </div>
+                        <span style={{ fontWeight: 'bold', color: '#38bdf8' }}>{item.priority_score}</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       {/* API Endpoints */}
       <section style={{ marginBottom: '32px' }}>
         <h2 style={{ fontSize: '1.25rem', color: '#e2e8f0', marginBottom: '16px' }}>
           API Endpoints
         </h2>
         <div style={{ display: 'grid', gap: '12px' }}>
+          {/* /api/routing */}
+          <div style={{
+            backgroundColor: '#0f172a',
+            border: '1px solid #334155',
+            borderRadius: '8px',
+            padding: '14px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '12px'
+          }}>
+            <div>
+              <span style={{
+                backgroundColor: '#0284c7',
+                color: '#ffffff',
+                padding: '3px 8px',
+                borderRadius: '4px',
+                fontSize: '0.8rem',
+                fontWeight: 'bold',
+                marginRight: '12px'
+              }}>
+                GET
+              </span>
+              <code style={{ color: '#38bdf8', fontSize: '0.95rem' }}>/api/routing</code>
+              <span style={{ color: '#94a3b8', fontSize: '0.85rem', marginLeft: '12px' }}>
+                Evacuation routing chain ranked by priority score
+              </span>
+            </div>
+            <a
+              href="/api/routing"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                color: '#38bdf8',
+                textDecoration: 'none',
+                border: '1px solid #0284c7',
+                padding: '5px 12px',
+                borderRadius: '6px',
+                fontSize: '0.85rem'
+              }}
+            >
+              Open JSON &rarr;
+            </a>
+          </div>
+
           {/* /api/alert */}
           <div style={{
             backgroundColor: '#0f172a',
