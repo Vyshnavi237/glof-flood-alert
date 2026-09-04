@@ -6,8 +6,9 @@ export interface SensorReading {
 
 export interface SimulationOptions {
   totalMinutes?: number;
-  spikeMinute?: number;
+  spikeMinute?: number | null;
   sensorFailureDelayMinutes?: number;
+  sensorFails?: boolean;
   seed?: number;
 }
 
@@ -43,37 +44,47 @@ export function generateGLOFTimeline(options: SimulationOptions = {}): SensorRea
     totalMinutes = 180,
     spikeMinute = 90,
     sensorFailureDelayMinutes = 3,
+    sensorFails = true,
     seed = 42,
   } = options;
 
   const rand = createRandomGenerator(seed);
   const timeline: SensorReading[] = [];
-  const failureMinute = spikeMinute + sensorFailureDelayMinutes; // e.g. 90 + 3 = 93
+  const failureMinute =
+    sensorFails && spikeMinute !== null && spikeMinute !== undefined && spikeMinute > 0
+      ? spikeMinute + sensorFailureDelayMinutes
+      : Infinity;
+
+  const hasSpike = spikeMinute !== null && spikeMinute !== undefined && spikeMinute > 0;
 
   for (let minute = 1; minute <= totalMinutes; minute++) {
     // 1. Calculate Seismic Reading
     let seismic: number;
 
-    const distFromSpike = minute - spikeMinute;
+    if (hasSpike) {
+      const distFromSpike = minute - (spikeMinute as number);
 
-    if (distFromSpike === 0) {
-      // Peak shock event at minute 90 (e.g. major calving / moraine displacement)
-      seismic = 7.8 + rand() * 0.9; // 7.8 - 8.7
-    } else if (distFromSpike === -1) {
-      // Immediate foreshock / rupture onset
-      seismic = 1.4 + rand() * 0.4;
-    } else if (distFromSpike === -2) {
-      // Precursory acoustic / micro-fracture noise
-      seismic = 0.5 + rand() * 0.25;
-    } else if (distFromSpike > 0 && distFromSpike <= 8) {
-      // Coda / aftershock wave decay
-      const decayFactor = Math.exp(-0.45 * distFromSpike);
-      const aftershockNoise = rand() * 0.3;
-      seismic = 0.25 + 6.0 * decayFactor + aftershockNoise;
+      if (distFromSpike === 0) {
+        // Peak shock event
+        seismic = 7.8 + rand() * 0.9;
+      } else if (distFromSpike === -1) {
+        // Immediate foreshock
+        seismic = 1.4 + rand() * 0.4;
+      } else if (distFromSpike === -2) {
+        // Precursory acoustic noise
+        seismic = 0.5 + rand() * 0.25;
+      } else if (distFromSpike > 0 && distFromSpike <= 8) {
+        // Coda / aftershock decay
+        const decayFactor = Math.exp(-0.45 * distFromSpike);
+        const aftershockNoise = rand() * 0.3;
+        seismic = 0.25 + 6.0 * decayFactor + aftershockNoise;
+      } else {
+        // Normal background ambient seismic noise
+        seismic = 0.08 + rand() * 0.16;
+      }
     } else {
-      // Normal background ambient seismic noise (microseisms, wind, glacial flow)
-      const ambientNoise = 0.08 + rand() * 0.16;
-      seismic = ambientNoise;
+      // Normal background ambient seismic noise throughout
+      seismic = 0.08 + rand() * 0.16;
     }
 
     // 2. Calculate Water Level
@@ -82,20 +93,20 @@ export function generateGLOFTimeline(options: SimulationOptions = {}): SensorRea
     if (minute < failureMinute) {
       const baselineWaterLevel = 25.0; // meters
 
-      if (minute < spikeMinute) {
+      if (!hasSpike || minute < (spikeMinute as number)) {
         // Normal lake surface with minor natural wave fluctuations (±0.15m)
         const waveFluctuation = Math.sin(minute * 0.3) * 0.08 + (rand() - 0.5) * 0.12;
         waterLevel = baselineWaterLevel + waveFluctuation;
       } else {
-        // Minute 90 to 92: Rapid surge / displacement wave before catastrophic sensor washout
-        const surgeProgress = minute - spikeMinute; // 0, 1, 2
-        const surgeOffset = (surgeProgress + 1) * 1.8 + rand() * 0.4; // water swells up to ~30.5m
+        // Minute spike to failure: Displacement wave surge
+        const surgeProgress = minute - (spikeMinute as number);
+        const surgeOffset = (surgeProgress + 1) * 1.8 + rand() * 0.4;
         waterLevel = baselineWaterLevel + surgeOffset;
       }
 
       waterLevel = Math.round(waterLevel * 100) / 100;
     } else {
-      // Sensor destroyed / washed away / telemetry connection lost -> null
+      // Sensor destroyed / telemetry connection lost -> null
       waterLevel = null;
     }
 

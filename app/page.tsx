@@ -2,27 +2,33 @@
 
 import { useState, useEffect } from 'react';
 import type { SensorReading } from '@/lib/glof-simulation';
+import type { DecisionResult } from '@/lib/glof-decision';
 
 export default function Home() {
   const [data, setData] = useState<SensorReading[]>([]);
+  const [decision, setDecision] = useState<DecisionResult | null>(null);
+  const [scenario, setScenario] = useState<string>('flood_imminent');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/sensor-data')
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-        return res.json();
-      })
-      .then((readings: SensorReading[]) => {
+    setLoading(true);
+    const scenarioQuery = scenario === 'flood_imminent' ? '' : `?scenario=${scenario}`;
+
+    Promise.all([
+      fetch(`/api/sensor-data${scenario === 'normal' ? '?spikeMinute=0' : scenario === 'watch' ? '' : ''}`).then((r) => r.json()),
+      fetch(`/api/decision${scenarioQuery}`).then((r) => r.json()),
+    ])
+      .then(([readings, dec]: [SensorReading[], DecisionResult]) => {
         setData(readings);
+        setDecision(dec);
         setLoading(false);
       })
       .catch((err) => {
         setError(err.message);
         setLoading(false);
       });
-  }, []);
+  }, [scenario]);
 
   const spikePoint = data.reduce<SensorReading | null>(
     (max, curr) => (!max || curr.seismic_reading > max.seismic_reading ? curr : max),
@@ -31,63 +37,210 @@ export default function Home() {
 
   const failurePoint = data.find((d) => d.minute > 80 && d.water_level === null);
 
+  const getStatusBadgeColor = (status?: string) => {
+    switch (status) {
+      case 'FLOOD_IMMINENT':
+        return { bg: 'rgba(239, 68, 68, 0.2)', border: '#ef4444', text: '#fca5a5' };
+      case 'WATCH':
+        return { bg: 'rgba(234, 179, 8, 0.2)', border: '#eab308', text: '#fde047' };
+      case 'NORMAL':
+        return { bg: 'rgba(34, 197, 94, 0.2)', border: '#22c55e', text: '#86efac' };
+      default:
+        return { bg: '#1e293b', border: '#475569', text: '#94a3b8' };
+    }
+  };
+
+  const badgeColors = getStatusBadgeColor(decision?.status);
+
   return (
     <main style={{ maxWidth: '960px', margin: '0 auto', padding: '40px 20px' }}>
       <header style={{ marginBottom: '32px', borderBottom: '1px solid #1e293b', paddingBottom: '24px' }}>
         <h1 style={{ fontSize: '2rem', margin: '0 0 8px 0', color: '#38bdf8' }}>
-          GLOF Early Warning Sensor Telemetry
+          GLOF Early Warning Decision System
         </h1>
         <p style={{ color: '#94a3b8', margin: 0, fontSize: '1.05rem', lineHeight: '1.6' }}>
-          Glacial Lake Outburst Flood (GLOF) simulation monitor. Tracking seismic amplitude tremors and
-          lake water-level gauge telemetry over a 180-minute window.
+          Glacial Lake Outburst Flood (GLOF) monitoring & rule-based decision logic.
+          Evaluates seismic tremor spikes and water-level telemetry silence to trigger early warning states.
         </p>
       </header>
 
-      <section style={{ marginBottom: '32px' }}>
-        <h2 style={{ fontSize: '1.25rem', color: '#e2e8f0', marginBottom: '16px' }}>
-          API Endpoint
-        </h2>
-        <div style={{
-          backgroundColor: '#0f172a',
-          border: '1px solid #334155',
-          borderRadius: '8px',
-          padding: '16px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '12px'
-        }}>
+      {/* Decision Status Banner */}
+      <section style={{
+        backgroundColor: badgeColors.bg,
+        border: `2px solid ${badgeColors.border}`,
+        borderRadius: '12px',
+        padding: '24px',
+        marginBottom: '32px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
           <div>
-            <span style={{
-              backgroundColor: '#0284c7',
-              color: '#ffffff',
-              padding: '4px 8px',
-              borderRadius: '4px',
-              fontSize: '0.85rem',
-              fontWeight: 'bold',
-              marginRight: '12px'
-            }}>
-              GET
+            <span style={{ fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#94a3b8' }}>
+              Current Decision Engine Status
             </span>
-            <code style={{ color: '#38bdf8', fontSize: '1rem' }}>/api/sensor-data</code>
+            <div style={{ fontSize: '2rem', fontWeight: 800, color: badgeColors.text, marginTop: '4px' }}>
+              {decision ? decision.status : 'Evaluating...'}
+            </div>
           </div>
-          <a
-            href="/api/sensor-data"
-            target="_blank"
-            rel="noopener noreferrer"
+          {decision?.spike_minute !== null && decision?.spike_minute !== undefined && (
+            <div style={{
+              backgroundColor: 'rgba(0,0,0,0.3)',
+              padding: '8px 16px',
+              borderRadius: '8px',
+              border: `1px solid ${badgeColors.border}`,
+              fontSize: '0.95rem'
+            }}>
+              Spike Detected at: <strong>Minute {decision.spike_minute}</strong>
+            </div>
+          )}
+        </div>
+
+        <p style={{ marginTop: '16px', marginBottom: 0, color: '#e2e8f0', lineHeight: '1.6', fontSize: '1.05rem' }}>
+          {decision ? decision.reason : 'Loading telemetry and evaluating logic...'}
+        </p>
+
+        {/* Scenario Switcher for Verification */}
+        <div style={{ marginTop: '20px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Test Decision Scenarios:</span>
+          <button
+            onClick={() => setScenario('flood_imminent')}
             style={{
-              color: '#38bdf8',
-              textDecoration: 'none',
-              border: '1px solid #0284c7',
-              padding: '6px 14px',
+              background: scenario === 'flood_imminent' ? '#ef4444' : '#1e293b',
+              color: '#fff',
+              border: 'none',
+              padding: '6px 12px',
               borderRadius: '6px',
-              fontSize: '0.9rem',
-              transition: 'all 0.2s'
+              cursor: 'pointer',
+              fontSize: '0.85rem'
             }}
           >
-            Open JSON in New Tab &rarr;
-          </a>
+            FLOOD_IMMINENT (Default)
+          </button>
+          <button
+            onClick={() => setScenario('watch')}
+            style={{
+              background: scenario === 'watch' ? '#eab308' : '#1e293b',
+              color: '#fff',
+              border: 'none',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '0.85rem'
+            }}
+          >
+            WATCH (Spike, No Washout)
+          </button>
+          <button
+            onClick={() => setScenario('normal')}
+            style={{
+              background: scenario === 'normal' ? '#22c55e' : '#1e293b',
+              color: '#fff',
+              border: 'none',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '0.85rem'
+            }}
+          >
+            NORMAL (No Spike)
+          </button>
+        </div>
+      </section>
+
+      {/* API Endpoints */}
+      <section style={{ marginBottom: '32px' }}>
+        <h2 style={{ fontSize: '1.25rem', color: '#e2e8f0', marginBottom: '16px' }}>
+          API Endpoints
+        </h2>
+        <div style={{ display: 'grid', gap: '12px' }}>
+          <div style={{
+            backgroundColor: '#0f172a',
+            border: '1px solid #334155',
+            borderRadius: '8px',
+            padding: '14px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '12px'
+          }}>
+            <div>
+              <span style={{
+                backgroundColor: '#0284c7',
+                color: '#ffffff',
+                padding: '3px 8px',
+                borderRadius: '4px',
+                fontSize: '0.8rem',
+                fontWeight: 'bold',
+                marginRight: '12px'
+              }}>
+                GET
+              </span>
+              <code style={{ color: '#38bdf8', fontSize: '0.95rem' }}>/api/decision</code>
+              <span style={{ color: '#94a3b8', fontSize: '0.85rem', marginLeft: '12px' }}>
+                Rule-based flood warning status evaluation
+              </span>
+            </div>
+            <a
+              href={`/api/decision${scenario === 'flood_imminent' ? '' : `?scenario=${scenario}`}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                color: '#38bdf8',
+                textDecoration: 'none',
+                border: '1px solid #0284c7',
+                padding: '5px 12px',
+                borderRadius: '6px',
+                fontSize: '0.85rem'
+              }}
+            >
+              Open JSON &rarr;
+            </a>
+          </div>
+
+          <div style={{
+            backgroundColor: '#0f172a',
+            border: '1px solid #334155',
+            borderRadius: '8px',
+            padding: '14px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '12px'
+          }}>
+            <div>
+              <span style={{
+                backgroundColor: '#0284c7',
+                color: '#ffffff',
+                padding: '3px 8px',
+                borderRadius: '4px',
+                fontSize: '0.8rem',
+                fontWeight: 'bold',
+                marginRight: '12px'
+              }}>
+                GET
+              </span>
+              <code style={{ color: '#38bdf8', fontSize: '0.95rem' }}>/api/sensor-data</code>
+              <span style={{ color: '#94a3b8', fontSize: '0.85rem', marginLeft: '12px' }}>
+                180-minute raw seismic & water-level sensor telemetry
+              </span>
+            </div>
+            <a
+              href="/api/sensor-data"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                color: '#38bdf8',
+                textDecoration: 'none',
+                border: '1px solid #0284c7',
+                padding: '5px 12px',
+                borderRadius: '6px',
+                fontSize: '0.85rem'
+              }}
+            >
+              Open JSON &rarr;
+            </a>
+          </div>
         </div>
       </section>
 
@@ -96,19 +249,19 @@ export default function Home() {
         <div style={{ backgroundColor: '#1e293b', borderRadius: '8px', padding: '16px' }}>
           <div style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Timeline Span</div>
           <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#f8fafc', marginTop: '4px' }}>
-            {data.length > 0 ? `${data.length} minutes (3 hrs)` : 'Loading...'}
+            {data.length > 0 ? `${data.length} mins (3 hrs)` : 'Loading...'}
           </div>
         </div>
         <div style={{ backgroundColor: '#1e293b', borderRadius: '8px', padding: '16px' }}>
-          <div style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Seismic Spike Peak</div>
+          <div style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Peak Seismic Amplitude</div>
           <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#f43f5e', marginTop: '4px' }}>
-            {spikePoint ? `${spikePoint.seismic_reading} amp (Min ${spikePoint.minute})` : 'Loading...'}
+            {spikePoint ? `${spikePoint.seismic_reading} amp` : 'Loading...'}
           </div>
         </div>
         <div style={{ backgroundColor: '#1e293b', borderRadius: '8px', padding: '16px' }}>
-          <div style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Water Sensor Cutoff</div>
+          <div style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Water Sensor Offline</div>
           <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#eab308', marginTop: '4px' }}>
-            {failurePoint ? `Min ${failurePoint.minute} (null)` : 'Loading...'}
+            {failurePoint ? `Minute ${failurePoint.minute}` : 'Active / Operational'}
           </div>
         </div>
       </section>
@@ -116,9 +269,9 @@ export default function Home() {
       {/* Sensor Data Preview Table */}
       <section>
         <h2 style={{ fontSize: '1.25rem', color: '#e2e8f0', marginBottom: '16px' }}>
-          Key Timeline Events Preview (around Minute 90)
+          Timeline Key Windows Preview
         </h2>
-        {loading && <p style={{ color: '#94a3b8' }}>Loading simulation data...</p>}
+        {loading && <p style={{ color: '#94a3b8' }}>Loading telemetry data...</p>}
         {error && <p style={{ color: '#ef4444' }}>Error: {error}</p>}
         {!loading && !error && (
           <div style={{
@@ -132,16 +285,16 @@ export default function Home() {
                 <tr style={{ borderBottom: '1px solid #334155', backgroundColor: '#1e293b' }}>
                   <th style={{ padding: '12px 16px', color: '#94a3b8' }}>Minute</th>
                   <th style={{ padding: '12px 16px', color: '#94a3b8' }}>Seismic Reading</th>
-                  <th style={{ padding: '12px 16px', color: '#94a3b8' }}>Water Level (m)</th>
-                  <th style={{ padding: '12px 16px', color: '#94a3b8' }}>Status</th>
+                  <th style={{ padding: '12px 16px', color: '#94a3b8' }}>Water Level</th>
+                  <th style={{ padding: '12px 16px', color: '#94a3b8' }}>Event State</th>
                 </tr>
               </thead>
               <tbody>
                 {data
-                  .filter((d) => (d.minute >= 87 && d.minute <= 96) || d.minute === 1 || d.minute === 180)
+                  .filter((d) => (d.minute >= 88 && d.minute <= 95) || d.minute === 1 || d.minute === 180)
                   .map((row) => {
                     const isSpike = row.minute === 90;
-                    const isCutoff = row.minute === 93;
+                    const isCutoff = row.minute === 93 && row.water_level === null;
                     return (
                       <tr
                         key={row.minute}
@@ -161,15 +314,15 @@ export default function Home() {
                           {row.seismic_reading}
                         </td>
                         <td style={{ padding: '10px 16px', color: row.water_level === null ? '#ef4444' : '#38bdf8' }}>
-                          {row.water_level !== null ? `${row.water_level} m` : 'null (offline)'}
+                          {row.water_level !== null ? `${row.water_level} m` : 'null (silent)'}
                         </td>
                         <td style={{ padding: '10px 16px', fontSize: '0.85rem' }}>
-                          {isSpike && <span style={{ color: '#f43f5e', fontWeight: 'bold' }}>⚠️ Sharp Seismic Spike</span>}
-                          {isCutoff && <span style={{ color: '#eab308', fontWeight: 'bold' }}>⚡ Sensor Silent (Washout)</span>}
-                          {row.minute > 93 && <span style={{ color: '#64748b' }}>Outburst flood in progress</span>}
-                          {row.minute < 88 && <span style={{ color: '#64748b' }}>Normal baseline telemetry</span>}
-                          {row.minute === 88 || row.minute === 89 ? <span style={{ color: '#fb923c' }}>Foreshock tremor buildup</span> : null}
-                          {row.minute === 91 || row.minute === 92 ? <span style={{ color: '#38bdf8' }}>Water surge / displacement</span> : null}
+                          {isSpike && <span style={{ color: '#f43f5e', fontWeight: 'bold' }}>⚠️ Primary Shock / Spike</span>}
+                          {isCutoff && <span style={{ color: '#eab308', fontWeight: 'bold' }}>⚡ Sensor Loss (Flood Breach)</span>}
+                          {row.water_level === null && !isCutoff && <span style={{ color: '#64748b' }}>Sensor offline</span>}
+                          {row.water_level !== null && !isSpike && row.seismic_reading < 1 && <span style={{ color: '#64748b' }}>Normal telemetry</span>}
+                          {row.minute === 88 || row.minute === 89 ? <span style={{ color: '#fb923c' }}>Foreshock tremor</span> : null}
+                          {row.minute === 91 || row.minute === 92 ? <span style={{ color: '#38bdf8' }}>Displacement wave</span> : null}
                         </td>
                       </tr>
                     );
