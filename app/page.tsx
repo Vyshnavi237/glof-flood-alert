@@ -3,10 +3,14 @@
 import { useState, useEffect } from 'react';
 import type { SensorReading } from '@/lib/glof-simulation';
 import type { DecisionResult } from '@/lib/glof-decision';
+import type { AlertResult } from '@/lib/glof-alert';
 
 export default function Home() {
   const [data, setData] = useState<SensorReading[]>([]);
   const [decision, setDecision] = useState<DecisionResult | null>(null);
+  const [alertResult, setAlertResult] = useState<AlertResult | null>(null);
+  const [alertLoading, setAlertLoading] = useState<boolean>(false);
+  const [alertError, setAlertError] = useState<string | null>(null);
   const [scenario, setScenario] = useState<string>('flood_imminent');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -16,12 +20,13 @@ export default function Home() {
     const scenarioQuery = scenario === 'flood_imminent' ? '' : `?scenario=${scenario}`;
 
     Promise.all([
-      fetch(`/api/sensor-data${scenario === 'normal' ? '?spikeMinute=0' : scenario === 'watch' ? '' : ''}`).then((r) => r.json()),
+      fetch(`/api/sensor-data${scenario === 'normal' ? '?spikeMinute=0' : ''}`).then((r) => r.json()),
       fetch(`/api/decision${scenarioQuery}`).then((r) => r.json()),
     ])
       .then(([readings, dec]: [SensorReading[], DecisionResult]) => {
         setData(readings);
         setDecision(dec);
+        setAlertResult(null); // reset alert for new scenario
         setLoading(false);
       })
       .catch((err) => {
@@ -29,6 +34,28 @@ export default function Home() {
         setLoading(false);
       });
   }, [scenario]);
+
+  const handleGenerateAlert = async () => {
+    if (!decision) return;
+    setAlertLoading(true);
+    setAlertError(null);
+    try {
+      const res = await fetch('/api/alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(decision),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.details || json.error || 'Failed to generate alert');
+      }
+      setAlertResult(json);
+    } catch (err: unknown) {
+      setAlertError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setAlertLoading(false);
+    }
+  };
 
   const spikePoint = data.reduce<SensorReading | null>(
     (max, curr) => (!max || curr.seismic_reading > max.seismic_reading ? curr : max),
@@ -56,11 +83,10 @@ export default function Home() {
     <main style={{ maxWidth: '960px', margin: '0 auto', padding: '40px 20px' }}>
       <header style={{ marginBottom: '32px', borderBottom: '1px solid #1e293b', paddingBottom: '24px' }}>
         <h1 style={{ fontSize: '2rem', margin: '0 0 8px 0', color: '#38bdf8' }}>
-          GLOF Early Warning Decision System
+          GLOF Early Warning & Alert System
         </h1>
         <p style={{ color: '#94a3b8', margin: 0, fontSize: '1.05rem', lineHeight: '1.6' }}>
-          Glacial Lake Outburst Flood (GLOF) monitoring & rule-based decision logic.
-          Evaluates seismic tremor spikes and water-level telemetry silence to trigger early warning states.
+          Himalayan Glacial Lake Outburst Flood (GLOF) monitoring, rule-based decision logic, and Featherless AI SMS broadcast generation.
         </p>
       </header>
 
@@ -70,12 +96,12 @@ export default function Home() {
         border: `2px solid ${badgeColors.border}`,
         borderRadius: '12px',
         padding: '24px',
-        marginBottom: '32px'
+        marginBottom: '24px'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
           <div>
             <span style={{ fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#94a3b8' }}>
-              Current Decision Engine Status
+              Decision Engine Status
             </span>
             <div style={{ fontSize: '2rem', fontWeight: 800, color: badgeColors.text, marginTop: '4px' }}>
               {decision ? decision.status : 'Evaluating...'}
@@ -89,7 +115,7 @@ export default function Home() {
               border: `1px solid ${badgeColors.border}`,
               fontSize: '0.95rem'
             }}>
-              Spike Detected at: <strong>Minute {decision.spike_minute}</strong>
+              Spike Detected: <strong>Minute {decision.spike_minute}</strong>
             </div>
           )}
         </div>
@@ -146,12 +172,146 @@ export default function Home() {
         </div>
       </section>
 
+      {/* AI Emergency Broadcast Alert Card */}
+      <section style={{
+        backgroundColor: '#0f172a',
+        border: '1px solid #334155',
+        borderRadius: '12px',
+        padding: '24px',
+        marginBottom: '32px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
+          <div>
+            <h2 style={{ fontSize: '1.25rem', color: '#38bdf8', margin: 0 }}>
+              AI Broadcast Alert Generator
+            </h2>
+            <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: '4px 0 0 0' }}>
+              Featherless AI (Qwen/Qwen2.5-7B-Instruct) generates concise, urgent SMS/radio alerts based on decision state.
+            </p>
+          </div>
+          <button
+            onClick={handleGenerateAlert}
+            disabled={alertLoading || loading}
+            style={{
+              backgroundColor: '#0284c7',
+              color: '#ffffff',
+              border: 'none',
+              padding: '8px 18px',
+              borderRadius: '6px',
+              cursor: alertLoading ? 'wait' : 'pointer',
+              fontWeight: 600,
+              fontSize: '0.9rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            {alertLoading ? 'Generating Alert...' : 'Generate SMS Alert with AI'}
+          </button>
+        </div>
+
+        {alertError && (
+          <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', border: '1px solid #ef4444', borderRadius: '8px', padding: '12px', color: '#fca5a5', fontSize: '0.9rem' }}>
+            <strong>Alert Error:</strong> {alertError}
+          </div>
+        )}
+
+        {alertResult && (
+          <div style={{
+            backgroundColor: '#1e293b',
+            border: '1px solid #475569',
+            borderRadius: '8px',
+            padding: '16px',
+            marginTop: '12px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <span style={{ fontSize: '0.8rem', color: '#38bdf8', fontWeight: 600 }}>
+                DISPATCHED SMS PAYLOAD ({alertResult.alert_text.length} chars):
+              </span>
+              <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                Model: {alertResult.model_used}
+              </span>
+            </div>
+            <div style={{
+              fontSize: '1.1rem',
+              color: '#f8fafc',
+              fontFamily: 'monospace',
+              backgroundColor: '#0b1120',
+              padding: '14px',
+              borderRadius: '6px',
+              borderLeft: '4px solid #38bdf8',
+              lineHeight: '1.5'
+            }}>
+              &ldquo;{alertResult.alert_text}&rdquo;
+            </div>
+          </div>
+        )}
+      </section>
+
       {/* API Endpoints */}
       <section style={{ marginBottom: '32px' }}>
         <h2 style={{ fontSize: '1.25rem', color: '#e2e8f0', marginBottom: '16px' }}>
           API Endpoints
         </h2>
         <div style={{ display: 'grid', gap: '12px' }}>
+          {/* /api/alert */}
+          <div style={{
+            backgroundColor: '#0f172a',
+            border: '1px solid #334155',
+            borderRadius: '8px',
+            padding: '14px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '12px'
+          }}>
+            <div>
+              <span style={{
+                backgroundColor: '#16a34a',
+                color: '#ffffff',
+                padding: '3px 6px',
+                borderRadius: '4px',
+                fontSize: '0.75rem',
+                fontWeight: 'bold',
+                marginRight: '6px'
+              }}>
+                POST
+              </span>
+              <span style={{
+                backgroundColor: '#0284c7',
+                color: '#ffffff',
+                padding: '3px 6px',
+                borderRadius: '4px',
+                fontSize: '0.75rem',
+                fontWeight: 'bold',
+                marginRight: '12px'
+              }}>
+                GET
+              </span>
+              <code style={{ color: '#38bdf8', fontSize: '0.95rem' }}>/api/alert</code>
+              <span style={{ color: '#94a3b8', fontSize: '0.85rem', marginLeft: '12px' }}>
+                Generates AI broadcast alert via Featherless AI
+              </span>
+            </div>
+            <a
+              href={`/api/alert${scenario === 'flood_imminent' ? '' : `?scenario=${scenario}`}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                color: '#38bdf8',
+                textDecoration: 'none',
+                border: '1px solid #0284c7',
+                padding: '5px 12px',
+                borderRadius: '6px',
+                fontSize: '0.85rem'
+              }}
+            >
+              Open GET in New Tab &rarr;
+            </a>
+          </div>
+
+          {/* /api/decision */}
           <div style={{
             backgroundColor: '#0f172a',
             border: '1px solid #334155',
@@ -197,6 +357,7 @@ export default function Home() {
             </a>
           </div>
 
+          {/* /api/sensor-data */}
           <div style={{
             backgroundColor: '#0f172a',
             border: '1px solid #334155',
