@@ -1,5 +1,16 @@
 import { NextResponse } from 'next/server';
 import { calculateEvacuationRouting } from '@/lib/glof-routing';
+import { getCorsHeaders, handleCorsPreflight } from '@/lib/cors';
+
+const ALLOWED_METHODS = 'GET, OPTIONS';
+
+/**
+ * OPTIONS /api/routing
+ * Handles CORS preflight requests.
+ */
+export async function OPTIONS(request: Request) {
+  return handleCorsPreflight(request, ALLOWED_METHODS);
+}
 
 /**
  * GET /api/routing
@@ -25,6 +36,8 @@ import { calculateEvacuationRouting } from '@/lib/glof-routing';
  * ]
  */
 export async function GET(request: Request) {
+  const corsHeaders = getCorsHeaders(request, ALLOWED_METHODS);
+
   try {
     const { searchParams } = new URL(request.url);
 
@@ -52,6 +65,7 @@ export async function GET(request: Request) {
       status: 200,
       headers: {
         'Cache-Control': 'no-store, max-age=0',
+        ...corsHeaders,
       },
     });
   } catch (error: unknown) {
@@ -60,7 +74,10 @@ export async function GET(request: Request) {
         error: 'Routing Calculation Error',
         details: error instanceof Error ? error.message : 'Unknown error',
       },
-      { status: 500 }
+      {
+        status: 500,
+        headers: corsHeaders,
+      }
     );
   }
 }

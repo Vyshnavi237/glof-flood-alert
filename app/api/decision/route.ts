@@ -5,6 +5,17 @@ import {
   DEFAULT_SEISMIC_THRESHOLD,
   DEFAULT_SILENCE_WINDOW_MINUTES,
 } from '@/lib/glof-decision';
+import { getCorsHeaders, handleCorsPreflight } from '@/lib/cors';
+
+const ALLOWED_METHODS = 'GET, OPTIONS';
+
+/**
+ * OPTIONS /api/decision
+ * Handles CORS preflight requests.
+ */
+export async function OPTIONS(request: Request) {
+  return handleCorsPreflight(request, ALLOWED_METHODS);
+}
 
 /**
  * GET /api/decision
@@ -18,6 +29,8 @@ import {
  *   - FLOOD_IMMINENT: Seismic spike detected AND water sensor goes silent shortly after
  */
 export async function GET(request: Request) {
+  const corsHeaders = getCorsHeaders(request, ALLOWED_METHODS);
+
   try {
     const { searchParams, origin } = new URL(request.url);
 
@@ -60,6 +73,7 @@ export async function GET(request: Request) {
       status: 200,
       headers: {
         'Cache-Control': 'no-store, max-age=0',
+        ...corsHeaders,
       },
     });
   } catch (error) {
@@ -68,7 +82,10 @@ export async function GET(request: Request) {
         error: 'Failed to evaluate flood decision',
         details: (error as Error).message,
       },
-      { status: 500 }
+      {
+        status: 500,
+        headers: corsHeaders,
+      }
     );
   }
 }

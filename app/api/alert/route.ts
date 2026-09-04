@@ -2,6 +2,17 @@ import { NextResponse } from 'next/server';
 import { generateGLOFTimeline } from '@/lib/glof-simulation';
 import { evaluateFloodDecision, DecisionResult, DecisionStatus } from '@/lib/glof-decision';
 import { generateFloodAlertMessage, DEFAULT_FEATHERLESS_MODEL } from '@/lib/glof-alert';
+import { getCorsHeaders, handleCorsPreflight } from '@/lib/cors';
+
+const ALLOWED_METHODS = 'GET, POST, OPTIONS';
+
+/**
+ * OPTIONS /api/alert
+ * Handles CORS preflight requests.
+ */
+export async function OPTIONS(request: Request) {
+  return handleCorsPreflight(request, ALLOWED_METHODS);
+}
 
 /**
  * Validates whether an object matches the DecisionResult shape.
@@ -50,6 +61,8 @@ function getInternalDecision(scenario?: string | null): DecisionResult {
  * Returns: { "alert_text": "...", "status": "...", "spike_minute": 90, "model_used": "..." }
  */
 export async function POST(request: Request) {
+  const corsHeaders = getCorsHeaders(request, ALLOWED_METHODS);
+
   try {
     if (!process.env.FEATHERLESS_API_KEY) {
       return NextResponse.json(
@@ -57,7 +70,10 @@ export async function POST(request: Request) {
           error: 'Configuration Error',
           message: 'FEATHERLESS_API_KEY is not defined in environment variables.',
         },
-        { status: 500 }
+        {
+          status: 500,
+          headers: corsHeaders,
+        }
       );
     }
 
@@ -84,7 +100,10 @@ export async function POST(request: Request) {
     const model = typeof body.model === 'string' ? body.model : DEFAULT_FEATHERLESS_MODEL;
     const result = await generateFloodAlertMessage(decision, { model });
 
-    return NextResponse.json(result, { status: 200 });
+    return NextResponse.json(result, {
+      status: 200,
+      headers: corsHeaders,
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     const isUpstream = message.includes('Featherless API error');
@@ -93,7 +112,10 @@ export async function POST(request: Request) {
         error: isUpstream ? 'Upstream AI Provider Error' : 'Alert Generation Error',
         details: message,
       },
-      { status: isUpstream ? 502 : 500 }
+      {
+        status: isUpstream ? 502 : 500,
+        headers: corsHeaders,
+      }
     );
   }
 }
@@ -107,6 +129,8 @@ export async function POST(request: Request) {
  * - model: open-source model name on Featherless (default: 'Qwen/Qwen2.5-7B-Instruct')
  */
 export async function GET(request: Request) {
+  const corsHeaders = getCorsHeaders(request, ALLOWED_METHODS);
+
   try {
     if (!process.env.FEATHERLESS_API_KEY) {
       return NextResponse.json(
@@ -114,7 +138,10 @@ export async function GET(request: Request) {
           error: 'Configuration Error',
           message: 'FEATHERLESS_API_KEY is not defined in environment variables.',
         },
-        { status: 500 }
+        {
+          status: 500,
+          headers: corsHeaders,
+        }
       );
     }
 
@@ -129,6 +156,7 @@ export async function GET(request: Request) {
       status: 200,
       headers: {
         'Cache-Control': 'no-store, max-age=0',
+        ...corsHeaders,
       },
     });
   } catch (error: unknown) {
@@ -139,7 +167,10 @@ export async function GET(request: Request) {
         error: isUpstream ? 'Upstream AI Provider Error' : 'Alert Generation Error',
         details: message,
       },
-      { status: isUpstream ? 502 : 500 }
+      {
+        status: isUpstream ? 502 : 500,
+        headers: corsHeaders,
+      }
     );
   }
 }

@@ -1,5 +1,16 @@
 import { NextResponse } from 'next/server';
 import { generateGLOFTimeline } from '@/lib/glof-simulation';
+import { getCorsHeaders, handleCorsPreflight } from '@/lib/cors';
+
+const ALLOWED_METHODS = 'GET, OPTIONS';
+
+/**
+ * OPTIONS /api/sensor-data
+ * Handles CORS preflight requests.
+ */
+export async function OPTIONS(request: Request) {
+  return handleCorsPreflight(request, ALLOWED_METHODS);
+}
 
 /**
  * GET /api/sensor-data
@@ -20,6 +31,8 @@ import { generateGLOFTimeline } from '@/lib/glof-simulation';
  * ]
  */
 export async function GET(request: Request) {
+  const corsHeaders = getCorsHeaders(request, ALLOWED_METHODS);
+
   try {
     const { searchParams } = new URL(request.url);
 
@@ -37,12 +50,16 @@ export async function GET(request: Request) {
       status: 200,
       headers: {
         'Cache-Control': 'no-store, max-age=0',
+        ...corsHeaders,
       },
     });
   } catch (error) {
     return NextResponse.json(
       { error: 'Failed to generate sensor timeline', details: (error as Error).message },
-      { status: 500 }
+      {
+        status: 500,
+        headers: corsHeaders,
+      }
     );
   }
 }
